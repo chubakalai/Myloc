@@ -1,7 +1,7 @@
 """EHL - exchange on Hyperliquid. E's rebalance to A's allocation every 10 minutes, live. Stdlib only.
 Only BTC is listed (no SPX, SENSEX): the margin is divided among ASSETS. HL_KEY=0x<private key of the funded account>.
 Logs to console and to PATH/ehl.log (rotating, UTC). The private key is never logged."""
-import json, logging, os, sys, time
+import json, logging, os, subprocess, sys, time
 from logging.handlers import RotatingFileHandler
 from d import PATH, SYMBOLS, open_file, update, save
 from a import allocate
@@ -12,6 +12,8 @@ MAXLEV = 10.0      # leverage limit on the account value
 MIN_ORDER = 10.0   # usd, exchange minimum order value
 SLIP = 0.05        # IOC limit 5% through mid
 STEP = 600         # seconds between runs: 144 per day
+TOPUP = "5"        # usd moved from spot to perp daily by sp.py (needs HL_MAIN_KEY)
+SP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sp.py")
 
 log = logging.getLogger("ehl")
 
@@ -50,6 +52,13 @@ def describe(res, order):
             log.warning("order status unexpected: %s", json.dumps(s))
 
 
+def topup():
+    """Run `sp.py TOPUP once`; a failure is logged and never stops trading."""
+    r = subprocess.run([sys.executable, SP, TOPUP, "once"], capture_output=True, text=True, timeout=120)
+    log.log(logging.INFO if r.returncode == 0 else logging.ERROR, "sp.py %s exit %d: %s",
+            TOPUP, r.returncode, (r.stdout + r.stderr).strip())
+
+
 def tick(key, me):
     t0 = time.time()
     log.info("tick start")
@@ -60,11 +69,8 @@ def tick(key, me):
     meta = {u["name"]: (i, u["szDecimals"]) for i, u in enumerate(post("/info", {"type": "meta"})["universe"])}
     mids = post("/info", {"type": "allMids"})
     acct = post("/info", {"type": "clearinghouseState", "user": me})
-    perps = float(acct["marginSummary"]["accountValue"])
-    spot = post("/info", {"type": "spotClearinghouseState", "user": me})   # unified accounts keep margin as spot USDC
-    usdc = sum(float(b["total"]) for b in spot["balances"] if b["coin"] == "USDC")
-    equity = max(perps, usdc)
-    log.info("account perps %.2f spot usdc %.2f -> equity %.2f", perps, usdc, equity)
+    equity = float(acct["marginSummary"]["accountValue"])   # perpetual account only, spot is ignored
+    log.info("account perps equity %.2f", equity)
     pos = {p["position"]["coin"]: p["position"] for p in acct["assetPositions"]}
     log.debug("positions on exchange: %s", json.dumps(pos))
     st = allocate(equity, ASSETS)                 # margin = current account value
@@ -100,7 +106,7 @@ def tick(key, me):
             log.info("%s no trade: gap below minimum", n)
         log.info("position %s price %.2f units %.6f entry %.2f unrealized %.2f",
                  n, mid, units, float(p.get("entryPx", 0)), float(p.get("unrealizedPnl", 0)))
-    log.info("tick done in %.1fs, equity %.2f (perps %.2f, spot usdc %.2f)", time.time() - t0, equity, perps, usdc)
+    log.info("tick done in %.1fs, equity %.2f", time.time() - t0, equity)
 
 
 def run():
@@ -121,12 +127,15 @@ def run():
         except Exception:
             log.exception("tick failed")
             sys.exit(1)
-    fails = 0
+    fails, day = 0, int(time.time() // 86400)
     while True:
         wait = STEP - time.time() % STEP          # wait for the next ten-minute mark
         log.debug("sleeping %.0fs", wait)
         time.sleep(wait)
         try:
+            if int(time.time() // 86400) != day:      # first tick after 00:00 UTC: top up the perp account
+                day = int(time.time() // 86400)
+                topup()
             tick(key, me)
             if fails:
                 log.info("recovered after %d failed tick(s)", fails)
