@@ -21,7 +21,7 @@ primary_region = 'gre'
   processes = ['app']
 
 [[mounts]]
-  source = 'mylocd'
+  source = 'mount'
   destination = '/data'
 
 [[vm]]
