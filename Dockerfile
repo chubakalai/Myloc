@@ -6,7 +6,7 @@ FROM python:3.11-slim
 # so logs surface immediately in `fly logs`.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TRACKER_DATA_DIR=/data
+    DATA_DIR=/data
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application source.
-COPY d.py f.py a.py ht.py ehl.py ./
+COPY --chmod=644 d.py f.py a.py ht.py ehl.py ./
 
 # Informational only — Fly.io routes to internal_port from fly.toml (8000).
 EXPOSE 8000
