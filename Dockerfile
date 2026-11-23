@@ -28,4 +28,5 @@ RUN mkdir -p /data && \
 
 USER appuser
 
-CMD ["python", "ehl.py"]
+CMD sh -c "python ehl.py & exec python -m http.server 8000 -d /data"
+ 
