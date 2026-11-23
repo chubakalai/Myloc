@@ -15,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application source.
-COPY --chmod=644 d.py f.py a.py ht.py ehl.py ./
+COPY --chmod=644 d.py f.py a.py ht.py ehl.py sp.py ./
 
 # Informational only — Fly.io routes to internal_port from fly.toml (8000).
 EXPOSE 8000
